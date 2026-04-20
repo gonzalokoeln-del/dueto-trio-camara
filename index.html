@@ -176,13 +176,17 @@
     .concert-row{grid-template-columns:1fr;gap:0.4rem;padding:1.4rem 1.25rem}
     .concerts-header-row{display:none}
     .trio-box{padding:2rem 1.5rem}
-    .lang-switcher{display:none}
+    .lang-btn{font-size:0.55rem;padding:0.3rem 0.5rem}
   }
   @media(max-width:600px){footer{flex-direction:column;text-align:center}.audio-grid{grid-template-columns:1fr}}
 
   /* i18n: hide all lang content by default, show active */
   [data-lang]{display:none}
-  .lang-es [data-lang="es"],[data-lang="es"]:not([class]){display:block}
+  .lang-es [data-lang="es"],
+  .lang-en [data-lang="en"],
+  .lang-de [data-lang="de"],
+  .lang-gl [data-lang="gl"],
+  [data-lang="es"]:not([class]){display:revert}
 </style>
 </head>
 <body class="lang-es">
