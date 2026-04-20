@@ -1,0 +1,104 @@
+name: Add concert from issue
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  add-concert:
+    if: github.event.label.name == 'concert'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse issue and update concerts.json
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, re, sys, os
+
+          body = os.environ.get('ISSUE_BODY', '')
+
+          def extract(label_pattern):
+              m = re.search(rf'###\s+{label_pattern}\s*\n+(.*?)(?=\n###|\Z)', body, re.DOTALL | re.IGNORECASE)
+              val = m.group(1).strip() if m else ''
+              return '' if val.lower() in ('_no response_', 'none', '') else val
+
+          date_raw  = extract(r'Fecha.*?Date') or extract(r'Fecha')
+          time_raw  = extract(r'Hora.*?Time')  or extract(r'Hora')
+          event_raw = extract(r'Nombre.*?Concert name') or extract(r'Nombre')
+          venue_raw = extract(r'Lugar.*?Venue') or extract(r'Lugar')
+
+          if not date_raw or not venue_raw:
+              print('ERROR: Date and venue are required.')
+              sys.exit(1)
+
+          months = {
+              'enero':'01','febrero':'02','marzo':'03','abril':'04',
+              'mayo':'05','junio':'06','julio':'07','agosto':'08',
+              'septiembre':'09','octubre':'10','noviembre':'11','diciembre':'12'
+          }
+
+          m = re.match(r'(\d{1,2})\s+(\w+)\s+(\d{4})', date_raw.lower())
+          if not m:
+              print(f'ERROR: Could not parse date: {date_raw}')
+              sys.exit(1)
+
+          day, month_name, year = m.groups()
+          month_num = months.get(month_name)
+          if not month_num:
+              print(f'ERROR: Unknown month name: {month_name}')
+              sys.exit(1)
+
+          iso_date = f'{year}-{month_num}-{day.zfill(2)}'
+
+          concert = {'date': iso_date, 'event': event_raw or 'Concierto', 'venue': venue_raw}
+          if time_raw:
+              concert['time'] = time_raw
+
+          with open('concerts.json', 'r', encoding='utf-8') as f:
+              concerts = json.load(f)
+
+          if any(c['date'] == iso_date and c['venue'] == venue_raw for c in concerts):
+              print('Concert already exists, skipping.')
+              sys.exit(0)
+
+          concerts.append(concert)
+          concerts.sort(key=lambda c: c['date'], reverse=True)
+
+          with open('concerts.json', 'w', encoding='utf-8') as f:
+              json.dump(concerts, f, ensure_ascii=False, indent=2)
+              f.write('\n')
+
+          print(f'Added: {iso_date} — {venue_raw}')
+          PYEOF
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add concerts.json
+          git diff --cached --quiet || git commit -m "concierto: añadir $(date -u +%Y-%m-%d) desde issue #${{ github.event.issue.number }}"
+          git push
+
+      - name: Close issue with confirmation
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '✅ Concierto añadido a la agenda. El sitio se actualizará en unos minutos.'
+            });
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            });

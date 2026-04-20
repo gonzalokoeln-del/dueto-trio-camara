@@ -1,0 +1,29 @@
+name: Añadir concierto / Add concert
+description: Añadir una nueva fecha a la agenda del sitio web
+labels: [concert]
+body:
+  - type: input
+    id: date
+    attributes:
+      label: "Fecha / Date"
+      description: "Día, mes en español y año"
+      placeholder: "22 abril 2026"
+    validations:
+      required: true
+  - type: input
+    id: time
+    attributes:
+      label: "Hora / Time"
+      placeholder: "20:45"
+  - type: input
+    id: event
+    attributes:
+      label: "Nombre del concierto / Concert name"
+      placeholder: "Veladas Literarias y Musicales"
+  - type: input
+    id: venue
+    attributes:
+      label: "Lugar / Venue"
+      placeholder: "Praza de Cadaval, Baiona"
+    validations:
+      required: true
