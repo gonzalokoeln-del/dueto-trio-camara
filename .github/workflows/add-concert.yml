@@ -2,7 +2,7 @@ name: Add Concert from Issue
 
 on:
   issues:
-    types: [opened]
+    types: [opened, labeled]
 
 jobs:
   add-concert:
@@ -56,6 +56,11 @@ jobs:
 
           with open('index.html', 'r', encoding='utf-8') as f:
               content = f.read()
+
+          # Avoid adding duplicates
+          if name in content:
+              print(f"Concert already present: {name}")
+              sys.exit(0)
 
           marker = '    </div>\n    <div class="concert-row">'
           idx = content.find(marker)
