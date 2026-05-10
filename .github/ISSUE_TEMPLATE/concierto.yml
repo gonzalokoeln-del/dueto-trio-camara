@@ -1,0 +1,36 @@
+name: Concierto / Concert
+description: Añadir un concierto a la agenda / Add a concert to the agenda
+title: "Concierto"
+labels: []
+body:
+  - type: input
+    id: fecha
+    attributes:
+      label: Fecha / Date
+      placeholder: "10 de mayo de 2026"
+    validations:
+      required: true
+
+  - type: input
+    id: hora
+    attributes:
+      label: Hora / Time
+      placeholder: "19h"
+    validations:
+      required: false
+
+  - type: input
+    id: nombre
+    attributes:
+      label: Nombre del concierto / Concert name
+      placeholder: "V Ciclo de cámara de la Unión Músical de Valladares"
+    validations:
+      required: true
+
+  - type: input
+    id: lugar
+    attributes:
+      label: Lugar / Venue
+      placeholder: "Auditorio de Valladares, Vigo"
+    validations:
+      required: true

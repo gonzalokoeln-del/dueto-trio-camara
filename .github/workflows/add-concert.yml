@@ -1,92 +1,90 @@
-name: Add concert from issue
+name: Add Concert from Issue
 
 on:
   issues:
-    types: [labeled]
-
-permissions:
-  contents: write
-  issues: write
+    types: [opened, labeled]
 
 jobs:
   add-concert:
-    if: github.event.label.name == 'concert'
+    if: contains(github.event.issue.body, '### Fecha / Date')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: preview
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Parse issue and update concerts.json
+      - name: Parse issue and update index.html
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          python3 - <<'PYEOF'
-          import json, re, sys, os
+          python3 << 'PYEOF'
+          import os, re, sys
 
-          body = os.environ.get('ISSUE_BODY', '')
+          body = os.environ['ISSUE_BODY']
 
-          def extract(label_pattern):
-              m = re.search(rf'###\s+{label_pattern}\s*\n+(.*?)(?=\n###|\Z)', body, re.DOTALL | re.IGNORECASE)
-              val = m.group(1).strip() if m else ''
-              return '' if val.lower() in ('_no response_', 'none', '') else val
+          def extract(body, header):
+              m = re.search(rf'### {re.escape(header)}\s*\n\s*\n(.+?)(?=\n\n###|\Z)', body, re.DOTALL)
+              if m:
+                  val = m.group(1).strip()
+                  return '' if val == '_No response_' else val
+              return ''
 
-          date_raw  = extract(r'Fecha.*?Date') or extract(r'Fecha')
-          time_raw  = extract(r'Hora.*?Time')  or extract(r'Hora')
-          event_raw = extract(r'Nombre.*?Concert name') or extract(r'Nombre')
-          venue_raw = extract(r'Lugar.*?Venue') or extract(r'Lugar')
+          date_raw = extract(body, 'Fecha / Date')
+          time_raw = extract(body, 'Hora / Time')
+          name     = extract(body, 'Nombre del concierto / Concert name')
+          venue    = extract(body, 'Lugar / Venue')
 
-          if not date_raw or not venue_raw:
-              print('ERROR: Date and venue are required.')
-              sys.exit(1)
-
-          months = {
-              'enero':'01','febrero':'02','marzo':'03','abril':'04',
-              'mayo':'05','junio':'06','julio':'07','agosto':'08',
-              'septiembre':'09','octubre':'10','noviembre':'11','diciembre':'12'
-          }
-
-          m = re.match(r'(\d{1,2})\s+(\w+)\s+(\d{4})', date_raw.lower())
-          if not m:
-              print(f'ERROR: Could not parse date: {date_raw}')
-              sys.exit(1)
-
-          day, month_name, year = m.groups()
-          month_num = months.get(month_name)
-          if not month_num:
-              print(f'ERROR: Unknown month name: {month_name}')
-              sys.exit(1)
-
-          iso_date = f'{year}-{month_num}-{day.zfill(2)}'
-
-          concert = {'date': iso_date, 'event': event_raw or 'Concierto', 'venue': venue_raw}
-          if time_raw:
-              concert['time'] = time_raw
-
-          with open('concerts.json', 'r', encoding='utf-8') as f:
-              concerts = json.load(f)
-
-          if any(c['date'] == iso_date and c['venue'] == venue_raw for c in concerts):
-              print('Concert already exists, skipping.')
+          if not date_raw or not name or not venue:
+              print("Missing required fields — skipping")
               sys.exit(0)
 
-          concerts.append(concert)
-          concerts.sort(key=lambda c: c['date'], reverse=True)
+          date_str = f"{date_raw} · {time_raw}" if time_raw else date_raw
 
-          with open('concerts.json', 'w', encoding='utf-8') as f:
-              json.dump(concerts, f, ensure_ascii=False, indent=2)
-              f.write('\n')
+          new_row = (
+              f'    <div class="concert-row">'
+              f'<p class="concert-date">{date_str}</p>'
+              f'<p class="concert-event">{name}</p>'
+              f'<p class="concert-venue">{venue}</p>'
+              f'</div>\n'
+          )
 
-          print(f'Added: {iso_date} — {venue_raw}')
+          with open('index.html', 'r', encoding='utf-8') as f:
+              content = f.read()
+
+          if name in content:
+              print(f"Concert already present: {name}")
+              sys.exit(0)
+
+          marker = '    </div>\n    <div class="concert-row">'
+          idx = content.find(marker)
+          if idx == -1:
+              print("ERROR: could not find insertion point")
+              sys.exit(1)
+
+          insert_at = idx + len('    </div>\n')
+          content = content[:insert_at] + new_row + content[insert_at:]
+
+          with open('index.html', 'w', encoding='utf-8') as f:
+              f.write(content)
+
+          print(f"Added: {name}")
           PYEOF
 
       - name: Commit and push
         run: |
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add concerts.json
-          git diff --cached --quiet || git commit -m "concierto: añadir $(date -u +%Y-%m-%d) desde issue #${{ github.event.issue.number }}"
-          git push
+          git add index.html
+          git diff --staged --quiet || git commit -m "Add concert from issue #${{ github.event.issue.number }}"
+          git push origin preview
 
-      - name: Close issue with confirmation
+      - name: Close issue and comment
         uses: actions/github-script@v7
         with:
           script: |
@@ -94,11 +92,12 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: '✅ Concierto añadido a la agenda. El sitio se actualizará en unos minutos.'
+              body: '✅ Concierto añadido a la web automáticamente.'
             });
             await github.rest.issues.update({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              state: 'closed'
+              state: 'closed',
+              state_reason: 'completed'
             });
