@@ -2,7 +2,7 @@ name: Add Concert from Issue
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [opened]
 
 jobs:
   add-concert:
@@ -18,13 +18,12 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Parse issue and update index.html
+      - name: Parse issue and update concerts.json
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           python3 << 'PYEOF'
-          import os, re, sys
+          import os, re, sys, json
 
           body = os.environ['ISSUE_BODY']
 
@@ -41,46 +40,53 @@ jobs:
           venue    = extract(body, 'Lugar / Venue')
 
           if not date_raw or not name or not venue:
-              print("Missing required fields — skipping")
+              print('Missing required fields')
               sys.exit(0)
 
-          date_str = f"{date_raw} · {time_raw}" if time_raw else date_raw
-
-          new_row = (
-              f'    <div class="concert-row">'
-              f'<p class="concert-date">{date_str}</p>'
-              f'<p class="concert-event">{name}</p>'
-              f'<p class="concert-venue">{venue}</p>'
-              f'</div>\n'
-          )
-
-          with open('index.html', 'r', encoding='utf-8') as f:
-              content = f.read()
-
-          if name in content:
-              print(f"Concert already present: {name}")
-              sys.exit(0)
-
-          marker = '    </div>\n    <div class="concert-row">'
-          idx = content.find(marker)
-          if idx == -1:
-              print("ERROR: could not find insertion point")
+          # Parse date to YYYY-MM-DD
+          MONTHS = {'enero':1,'febrero':2,'marzo':3,'abril':4,'mayo':5,'junio':6,
+                    'julio':7,'agosto':8,'septiembre':9,'octubre':10,'noviembre':11,'diciembre':12,
+                    'january':1,'february':2,'march':3,'april':4,'june':6,'july':7,
+                    'august':8,'september':9,'october':10,'november':11,'december':12}
+          parts = re.findall(r'[\w]+', date_raw.lower())
+          day = year = month = None
+          for p in parts:
+              if p.isdigit() and int(p) > 31: year = int(p)
+              elif p.isdigit() and int(p) <= 31: day = int(p)
+              elif p in MONTHS: month = MONTHS[p]
+          if not (day and month and year):
+              print(f'Could not parse date: {date_raw}')
               sys.exit(1)
+          date_iso = f'{year:04d}-{month:02d}-{day:02d}'
 
-          insert_at = idx + len('    </div>\n')
-          content = content[:insert_at] + new_row + content[insert_at:]
+          # Parse time (strip 'h')
+          time_str = re.sub(r'h.*', '', time_raw).strip() if time_raw else None
 
-          with open('index.html', 'w', encoding='utf-8') as f:
-              f.write(content)
+          with open('concerts.json', 'r', encoding='utf-8') as f:
+              concerts = json.load(f)
 
-          print(f"Added: {name}")
+          if any(c.get('event') == name for c in concerts):
+              print(f'Already present: {name}')
+              sys.exit(0)
+
+          entry = {'date': date_iso, 'event': name, 'venue': venue}
+          if time_str:
+              entry['time'] = time_str
+
+          concerts.insert(0, entry)
+
+          with open('concerts.json', 'w', encoding='utf-8') as f:
+              json.dump(concerts, f, ensure_ascii=False, indent=2)
+              f.write('\n')
+
+          print(f'Added: {name}')
           PYEOF
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html
+          git add concerts.json
           git diff --staged --quiet || git commit -m "Add concert from issue #${{ github.event.issue.number }}"
           git push origin main
 
