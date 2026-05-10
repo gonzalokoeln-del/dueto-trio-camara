@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: preview
+          ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Parse issue and update index.html
@@ -82,7 +82,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
           git diff --staged --quiet || git commit -m "Add concert from issue #${{ github.event.issue.number }}"
-          git push origin preview
+          git push origin main
 
       - name: Close issue and comment
         uses: actions/github-script@v7
